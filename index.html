@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEON TYPER: Mobile Defense</title>
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=JetBrains+Mono:wght@300;400;700&display=swap');
+
+        :root {
+            --neon-cyan: #00ffff;
+            --neon-magenta: #ff00ff;
+            --neon-blue: #4facfe;
+            --panel-bg: rgba(10, 20, 40, 0.85);
+        }
+
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: 'Orbitron', sans-serif; 
+            background: #000; 
+            color: #fff;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        /* Hidden input for mobile keyboard triggering */
+        #mobile-input-trigger {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+            top: -100px;
+        }
+
+        /* --- UI LAYER --- */
+        #ui-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1rem;
+            z-index: 20;
+        }
+
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 0.75rem 1rem;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            pointer-events: auto;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* --- VITAL STATS --- */
+        .stat-label {
+            font-size: 0.55rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1rem;
+            color: var(--neon-cyan);
+            font-weight: 900;
+        }
+
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            line-height: 1.2;
+            text-shadow: 0 0 10px var(--neon-cyan);
+        }
+
+        @media (min-width: 768px) {
+            .stat-value { font-size: 2rem; }
+            #ui-overlay { padding: 2rem; }
+        }
+
+        /* --- SHIELD BAR --- */
+        .shield-container {
+            width: 100px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            overflow: hidden;
+            margin-top: 0.25rem;
+        }
+
+        @media (min-width: 768px) {
+            .shield-container { width: 200px; height: 12px; }
+        }
+
+        #shield-fill {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%);
+            transition: width 0.4s ease;
+        }
+
+        /* --- TYPING HUD --- */
+        #typing-center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 10vh;
+        }
+
+        #word-display {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: 0.3rem;
+            height: 4rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-transform: uppercase;
+            text-align: center;
+            width: 90vw;
+        }
+
+        @media (min-width: 768px) {
+            #word-display { font-size: 5rem; letter-spacing: 0.8rem; }
+        }
+
+        .char-typed { color: var(--neon-cyan); text-shadow: 0 0 20px var(--neon-cyan); }
+        .char-next { color: #fff; animation: blink 0.8s infinite; border-bottom: 3px solid var(--neon-cyan); }
+        .char-dim { color: rgba(255, 255, 255, 0.2); }
+
+        /* --- COMBAT LOG (Hide on small mobile) --- */
+        #combat-log {
+            width: 240px;
+            height: 120px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.6rem;
+            overflow-y: hidden;
+            display: none;
+            flex-direction: column-reverse;
+            background: rgba(0, 5, 10, 0.6);
+            border-left: 2px solid var(--neon-cyan);
+            padding: 0.5rem;
+        }
+
+        @media (min-width: 1024px) {
+            #combat-log { display: flex; }
+        }
+
+        /* --- TURRET SVG --- */
+        #turret-container {
+            position: absolute;
+            bottom: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 250px;
+            height: 120px;
+            z-index: 15;
+            pointer-events: none;
+        }
+
+        @media (min-width: 768px) {
+            #turret-container { width: 400px; height: 200px; bottom: 0; }
+        }
+
+        /* --- SCREEN STATES --- */
+        .overlay-screen {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at center, #0a192f 0%, #000 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            pointer-events: auto;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .neo-btn {
+            padding: 1rem 2.5rem;
+            border: 2px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            background: transparent;
+            font-family: 'Orbitron';
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .neo-btn:active {
+            background: var(--neon-cyan);
+            color: #000;
+        }
+
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    </style>
+</head>
+<body onclick="focusMobileInput()">
+
+    <input type="text" id="mobile-input-trigger" autocomplete="off" autoconnect="off" spellcheck="false">
+
+    <div id="turret-container">
+        <svg viewBox="0 0 400 200" width="100%" height="100%">
+            <path d="M150 200 L250 200 L230 150 L170 150 Z" fill="#112233" stroke="#00ffff" stroke-width="2"/>
+            <g id="main-cannon" transform="translate(200, 160)">
+                <rect x="-15" y="-80" width="30" height="80" fill="#1a334d" stroke="#00ffff" stroke-width="2"/>
+                <circle cx="0" cy="0" r="25" fill="#112233" stroke="#00ffff" stroke-width="2"/>
+            </g>
+        </svg>
+    </div>
+
+    <div id="start-screen" class="overlay-screen">
+        <h1 class="text-4xl md:text-8xl font-black italic tracking-tighter text-cyan-400 mb-2">NEON TYPER</h1>
+        <p class="text-cyan-800 font-mono text-xs md:text-sm tracking-[0.5em] uppercase mb-12">Mobile Defense Protocol</p>
+        <button class="neo-btn" onclick="startGame()">Initiate Link</button>
+        <p class="mt-8 text-[10px] text-cyan-700 uppercase tracking-widest">Tap anywhere to focus keyboard</p>
+    </div>
+
+    <div id="game-over-screen" class="overlay-screen" style="display:none;">
+        <h2 class="text-4xl font-bold text-red-500 mb-4">HULL BREACHED</h2>
+        <div id="final-stats" class="text-lg font-mono text-cyan-100 mb-8"></div>
+        <button class="neo-btn" onclick="location.reload()">Reboot</button>
+    </div>
+
+    <div id="ui-overlay">
+        <!-- Top Stats Bar -->
+        <div class="flex justify-between items-start w-full gap-2">
+            <div class="flex flex-col gap-2">
+                <div class="glass-panel">
+                    <div class="stat-label">Credits</div>
+                    <div id="score" class="stat-value">000000</div>
+                </div>
+                <div class="glass-panel">
+                    <div class="stat-label">WPM</div>
+                    <div id="wpm" class="stat-value">0</div>
+                </div>
+            </div>
+
+            <div class="glass-panel text-right">
+                <div class="stat-label">Shields</div>
+                <div id="shield-text" class="stat-value">100%</div>
+                <div class="shield-container">
+                    <div id="shield-fill"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Display -->
+        <div id="typing-center">
+            <div id="word-display"></div>
+            <div id="system-status" class="text-cyan-500 font-mono text-[9px] md:text-[10px] tracking-widest uppercase">
+                Ready for input
+            </div>
+        </div>
+
+        <!-- Bottom Bar -->
+        <div class="flex justify-between items-end w-full">
+            <div id="combat-log"></div>
+            <div class="glass-panel">
+                <div class="stat-label">Sector</div>
+                <div id="sector-display" class="stat-value text-xl">01</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CONFIG = {
+            WORDS: ["PULSE", "VOID", "CORE", "BEAM", "DATA", "LINK", "FAST", "SCAN", "GRID", "NODE", "DISK", "WARP", "BOLT", "TYPE", "PLAY", "STAR", "GALAXY", "HYPER", "NEON", "CYBER", "LASER", "SIGNAL", "TARGET", "ORBIT"],
+            INITIAL_SPEED: 0.55,
+            SPAWN_COOLDOWN: 2200,
+            LEVEL_THRESHOLD: 3000
+        };
+
+        let state = {
+            score: 0, health: 100, level: 1, wpm: 0,
+            charsTyped: 0, errors: 0, startTime: null,
+            gameActive: false, activeWords: [], currentTarget: null,
+            typedBuffer: "", lastSpawn: 0, spawnRate: CONFIG.SPAWN_COOLDOWN,
+            difficulty: CONFIG.INITIAL_SPEED
+        };
+
+        let scene, camera, renderer, clock, starField;
+        const mobileInput = document.getElementById('mobile-input-trigger');
+
+        function initEngine() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            // Stars
+            const starGeo = new THREE.BufferGeometry();
+            const pos = new Float32Array(5000 * 3);
+            for(let i=0; i<15000; i++) pos[i] = (Math.random() - 0.5) * 150;
+            starGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            starField = new THREE.Points(starGeo, new THREE.PointsMaterial({ size: 0.1, color: 0x4facfe }));
+            scene.add(starField);
+
+            camera.position.z = 5;
+            clock = new THREE.Clock();
+
+            window.addEventListener('resize', onWindowResize);
+            
+            // Mobile Keyboard Integration
+            mobileInput.addEventListener('input', (e) => {
+                const val = e.target.value.toUpperCase();
+                if (val.length > 0) {
+                    processChar(val[val.length - 1]);
+                    mobileInput.value = ""; // Clear for next char
+                }
+            });
+
+            // Desktop Keyboard Fallback
+            document.addEventListener('keydown', (e) => {
+                if (e.key.length === 1) processChar(e.key.toUpperCase());
+            });
+        }
+
+        function focusMobileInput() {
+            if (state.gameActive) mobileInput.focus();
+        }
+
+        function processChar(key) {
+            if (!state.gameActive) return;
+
+            if (!state.currentTarget) {
+                const match = state.activeWords.find(w => w.userData.text.startsWith(key));
+                if (match) {
+                    state.currentTarget = match;
+                    state.typedBuffer = key;
+                    state.charsTyped++;
+                    playTypingEffect(true);
+                } else {
+                    handleError();
+                }
+            } else {
+                const targetText = state.currentTarget.userData.text;
+                const nextChar = targetText[state.typedBuffer.length];
+                if (key === nextChar) {
+                    state.typedBuffer += key;
+                    state.charsTyped++;
+                    playTypingEffect(true);
+                    if (state.typedBuffer === targetText) completeWord();
+                } else {
+                    handleError();
+                }
+            }
+            updateHUD();
+        }
+
+        function createWordMesh(text) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 256; canvas.height = 64;
+            ctx.font = 'bold 40px "JetBrains Mono"';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.fillText(text, 128, 45);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const mesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(2.5, 0.6),
+                new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+            );
+            
+            // Random position based on screen width
+            const range = window.innerWidth < 768 ? 4 : 8;
+            mesh.position.set((Math.random() - 0.5) * range, (Math.random() - 0.5) * 4 + 2, -40);
+            mesh.userData = { text: text, speed: (0.4 + Math.random() * 0.4) * state.difficulty };
+            return mesh;
+        }
+
+        function spawn() {
+            const word = CONFIG.WORDS[Math.floor(Math.random() * CONFIG.WORDS.length)];
+            const mesh = createWordMesh(word);
+            state.activeWords.push(mesh);
+            scene.add(mesh);
+        }
+
+        function completeWord() {
+            state.score += (state.typedBuffer.length * 100);
+            fireLaser(state.currentTarget.position);
+            scene.remove(state.currentTarget);
+            state.activeWords = state.activeWords.filter(w => w !== state.currentTarget);
+            state.currentTarget = null;
+            state.typedBuffer = "";
+            state.difficulty += 0.02;
+            state.spawnRate = Math.max(800, state.spawnRate - 20);
+            
+            const newLevel = Math.floor(state.score / CONFIG.LEVEL_THRESHOLD) + 1;
+            if (newLevel > state.level) {
+                state.level = newLevel;
+                document.getElementById('sector-display').innerText = state.level.toString().padStart(2, '0');
+            }
+        }
+
+        function fireLaser(targetPos) {
+            const cannon = document.getElementById('main-cannon');
+            const angle = Math.atan2(targetPos.x, Math.abs(targetPos.z)) * (180/Math.PI);
+            cannon.setAttribute('transform', `translate(200, 160) rotate(${angle * 1.5})`);
+        }
+
+        function handleError() {
+            state.errors++;
+            playTypingEffect(false);
+        }
+
+        function updateHUD() {
+            document.getElementById('score').innerText = state.score.toString().padStart(6, '0');
+            const elapsed = state.startTime ? (Date.now() - state.startTime) / 60000 : 0;
+            document.getElementById('wpm').innerText = elapsed > 0 ? Math.round((state.charsTyped/5)/elapsed) : 0;
+            document.getElementById('shield-text').innerText = state.health + "%";
+            document.getElementById('shield-fill').style.width = state.health + "%";
+
+            const display = document.getElementById('word-display');
+            if (state.currentTarget) {
+                const word = state.currentTarget.userData.text;
+                display.innerHTML = word.split('').map((c, i) => {
+                    if (i < state.typedBuffer.length) return `<span class="char-typed">${c}</span>`;
+                    if (i === state.typedBuffer.length) return `<span class="char-next">${c}</span>`;
+                    return `<span class="char-dim">${c}</span>`;
+                }).join('');
+                document.getElementById('system-status').innerText = "Target Locked";
+            } else {
+                display.innerHTML = '<span class="opacity-10">SEARCHING...</span>';
+                document.getElementById('system-status').innerText = "Ready for input";
+            }
+        }
+
+        function takeDamage() {
+            state.health -= 20;
+            if(state.health <= 0) {
+                state.gameActive = false;
+                document.getElementById('game-over-screen').style.display = 'flex';
+                document.getElementById('final-stats').innerText = `Score: ${state.score} | WPM: ${document.getElementById('wpm').innerText}`;
+            }
+            updateHUD();
+        }
+
+        function startGame() {
+            document.getElementById('start-screen').style.display = 'none';
+            state.gameActive = true;
+            state.startTime = Date.now();
+            mobileInput.focus();
+            updateHUD();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function playTypingEffect(isCorrect) {
+            const center = document.getElementById('typing-center');
+            center.style.transform = isCorrect ? 'scale(1.05)' : 'translateX(10px)';
+            setTimeout(() => center.style.transform = 'none', 50);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            if (state.gameActive) {
+                const now = Date.now();
+                if (now - state.lastSpawn > state.spawnRate) {
+                    spawn();
+                    state.lastSpawn = now;
+                }
+
+                starField.rotation.y += 0.001;
+                starField.position.z += 0.05;
+                if(starField.position.z > 20) starField.position.z = 0;
+
+                for (let i = state.activeWords.length - 1; i >= 0; i--) {
+                    const word = state.activeWords[i];
+                    word.position.z += word.userData.speed * delta * 12;
+                    
+                    if (word === state.currentTarget) {
+                        word.scale.setScalar(1.2 + Math.sin(now * 0.01) * 0.1);
+                    }
+
+                    if (word.position.z > camera.position.z - 1) {
+                        takeDamage();
+                        if (word === state.currentTarget) {
+                            state.currentTarget = null;
+                            state.typedBuffer = "";
+                        }
+                        scene.remove(word);
+                        state.activeWords.splice(i, 1);
+                    }
+                }
+            }
+            renderer.render(scene, camera);
+        }
+
+        window.onload = () => {
+            initEngine();
+            animate();
+        };
+    </script>
+</body>
+</html>
